@@ -5,81 +5,201 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>借出中設備清單</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 15px; margin: 0; background: #fff; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 15px; background-color: #ffffff; color: #333; }
     
-    .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-    .back-btn { padding: 8px 14px; font-size: 14px; font-weight: bold; background: #0d6efd; color: white; border: none; border-radius: 6px; cursor: pointer; text-decoration: none; }
+    .container { max-width: 100%; margin: 0 auto; }
     
-    .loading { text-align: center; font-size: 16px; color: #666; margin-top: 30px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
-    th, td { border: 1px solid #dee2e6; padding: 10px 8px; text-align: left; }
-    th { background-color: #0d6efd; color: white; }
+    /* 標頭與控制區 */
+    .header-bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; margin-bottom: 15px; gap: 10px; }
+    .title { font-size: 18px; font-weight: bold; color: #0d6efd; margin: 0; display: flex; align-items: center; gap: 6px; }
+    .badge { background-color: #e7f1ff; color: #0d6efd; padding: 4px 8px; border-radius: 12px; font-size: 13px; font-weight: bold; }
+
+    /* 搜尋框與重新整理按鈕 */
+    .controls { display: flex; gap: 8px; width: 100%; }
+    .search-input { flex: 1; padding: 8px 12px; font-size: 14px; border: 1px solid #ced4da; border-radius: 6px; outline: none; }
+    .search-input:focus { border-color: #0d6efd; box-shadow: 0 0 0 2px rgba(13,110,253,0.25); }
+    .btn-refresh { padding: 8px 14px; font-size: 14px; background-color: #6c757d; color: white; border: none; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+    .btn-refresh:hover { background-color: #5a6268; }
+
+    /* 表格樣式 */
+    .table-responsive { overflow-x: auto; border-radius: 8px; border: 1px solid #dee2e6; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; text-align: left; }
+    th { background-color: #f8f9fa; color: #495057; font-weight: bold; padding: 10px 12px; border-bottom: 2px solid #dee2e6; white-space: nowrap; }
+    td { padding: 10px 12px; border-bottom: 1px solid #dee2e6; color: #212529; }
     tr:nth-child(even) { background-color: #f8f9fa; }
-    .badge-borrowed { background-color: #dc3545; color: white; padding: 3px 8px; border-radius: 12px; font-size: 12px; }
+    tr:hover { background-color: #e9ecef; }
+
+    /* 狀態標籤 */
+    .status-tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+
+    /* 載入與空資料狀態 */
+    .status-message { text-align: center; padding: 30px 15px; color: #6c757d; font-size: 15px; }
+    .spinner { border: 3px solid #f3f3f3; border-top: 3px solid #0d6efd; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; margin: 0 auto 10px auto; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
 
-  <div class="top-bar">
-    <h3 style="margin:0;">📋 借出中設備清單</h3>
-    <!-- 返回 Index 掃描主頁 -->
-    <a id="go-scan-btn" class="back-btn" href="#">📷 返回掃描頁</a>
+<div class="container">
+  <div class="header-bar">
+    <div class="title">
+      <span>📋 借出中設備清單</span>
+      <span id="count-badge" class="badge">0 件</span>
+    </div>
   </div>
 
-  <div id="loading" class="loading">⏳ 正在載入借出中清單...</div>
-  <div id="table-container"></div>
+  <div class="controls">
+    <input type="text" id="search-input" class="search-input" placeholder="搜尋設備編號、名稱或品牌..." onkeyup="filterData()">
+    <button class="btn-refresh" onclick="loadData()">🔄 更新</button>
+  </div>
 
-  <script>
-    const API_URL = window.location.href.split('?')[0];
-    document.getElementById('go-scan-btn').href = API_URL;
+  <div style="margin-top: 15px;">
+    <div id="loading-view" class="status-message">
+      <div class="spinner"></div>
+      <div>正在讀取試算表資料...</div>
+    </div>
 
-    window.onload = function() {
-      if (typeof google !== 'undefined' && google.script && google.script.run) {
-        google.script.run
-          .withSuccessHandler(renderTable)
-          .withFailureHandler(showError)
-          .getBorrowedData();
-      } else {
-        document.getElementById('loading').innerText = "環境錯誤：非 GAS 環境執行。";
-      }
-    };
+    <div id="empty-view" class="status-message" style="display: none;">
+      🎉 目前沒有任何借出中的設備！
+    </div>
 
-    function renderTable(data) {
-      const loading = document.getElementById('loading');
-      const container = document.getElementById('table-container');
+    <div id="table-container" class="table-responsive" style="display: none;">
+      <table id="data-table">
+        <thead id="table-head"></thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
 
-      if (!data || data.length <= 1) {
-        loading.innerText = "🎉 目前沒有借出中的設備！";
-        return;
-      }
+<script>
+  let rawData = []; // 儲存全域原始資料
 
-      loading.style.display = 'none';
+  // 網頁載入完成後自動觸發
+  window.onload = function() {
+    loadData();
+  };
 
-      let html = '<table><thead><tr>';
-      data[0].forEach(header => {
-        html += `<th>${header}</th>`;
+  // 向 GAS 後端 (getBorrowedData) 請求資料
+  function loadData() {
+    showLoading(true);
+
+    if (typeof google !== 'undefined' && google.script && google.script.run) {
+      google.script.run
+        .withSuccessHandler(renderTable)
+        .withFailureHandler(handleError)
+        .getBorrowedData();
+    } else {
+      // 本地測試模擬資料 (當非在 GAS 環境開啟時使用)
+      setTimeout(() => {
+        const mockData = [
+          ["設備編號", "設備名稱", "狀態", "借用人", "品牌/型號"],
+          ["EQ-001", "MacBook Pro 16", "借出中", "張小明", "Apple"],
+          ["EQ-004", "Sony A7IV 相機", "借出中", "李大華", "Sony"]
+        ];
+        renderTable(mockData);
+      }, 800);
+    }
+  }
+
+  // 渲染表格資料
+  function renderTable(data) {
+    showLoading(false);
+    
+    if (!data || data.length <= 1) {
+      document.getElementById('empty-view').style.display = 'block';
+      document.getElementById('table-container').style.display = 'none';
+      document.getElementById('count-badge').innerText = '0 件';
+      return;
+    }
+
+    rawData = data; // 儲存起來供搜尋過濾使用
+    document.getElementById('empty-view').style.display = 'none';
+    document.getElementById('table-container').style.display = 'block';
+
+    // 渲染表頭 (第一列)
+    const thead = document.getElementById('table-head');
+    thead.innerHTML = '';
+    let trHead = document.createElement('tr');
+    data[0].forEach(headerText => {
+      let th = document.createElement('th');
+      th.innerText = headerText;
+      trHead.appendChild(th);
+    });
+    thead.appendChild(trHead);
+
+    // 渲染資料列 (過濾後的內容)
+    displayBodyRows(data.slice(1));
+  }
+
+  // 輸出表格內容
+  function displayBodyRows(rows) {
+    const tbody = document.getElementById('table-body');
+    tbody.innerHTML = '';
+    
+    document.getElementById('count-badge').innerText = `${rows.length} 件`;
+
+    if (rows.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="100%" style="text-align:center; color:#999; padding:20px;">找不到符合搜尋條件的設備</td></tr>`;
+      return;
+    }
+
+    rows.forEach(row => {
+      let tr = document.createElement('tr');
+      row.forEach((cellText, index) => {
+        let td = document.createElement('td');
+        // 如果該欄位是「狀態」(通常在第 3 欄 / 索引 2)，加上特定標籤樣式
+        if (cellText === '借出中') {
+          td.innerHTML = `<span class="status-tag">${cellText}</span>`;
+        } else {
+          td.innerText = cellText;
+        }
+        tr.appendChild(td);
       });
-      html += '</tr></thead><tbody>';
+      tbody.appendChild(tr);
+    });
+  }
 
-      for (let i = 1; i < data.length; i++) {
-        html += '<tr>';
-        data[i].forEach((cell, index) => {
-          if (index === 2) {
-            html += `<td><span class="badge-borrowed">${cell}</span></td>`;
-          } else {
-            html += `<td>${cell}</td>`;
-          }
-        });
-        html += '</tr>';
-      }
+  // 即時搜尋過濾功能
+  function filterData() {
+    if (rawData.length <= 1) return;
 
-      html += '</tbody></table>';
-      container.innerHTML = html;
+    const keyword = document.getElementById('search-input').value.toLowerCase().trim();
+    if (!keyword) {
+      displayBodyRows(rawData.slice(1));
+      return;
     }
 
-    function showError(err) {
-      document.getElementById('loading').innerText = "載入失敗：" + (err.message || err);
+    // 只要有任一欄位包含關鍵字就顯示
+    const filteredRows = rawData.slice(1).filter(row => {
+      return row.some(cell => String(cell).toLowerCase().includes(keyword));
+    });
+
+    displayBodyRows(filteredRows);
+  }
+
+  // 顯示/隱藏載入中狀態
+  function showLoading(isLoading) {
+    const loadingView = document.getElementById('loading-view');
+    const tableContainer = document.getElementById('table-container');
+    const emptyView = document.getElementById('empty-view');
+
+    if (isLoading) {
+      loadingView.style.display = 'block';
+      tableContainer.style.display = 'none';
+      emptyView.style.display = 'none';
+    } else {
+      loadingView.style.display = 'none';
     }
-  </script>
+  }
+
+  // 錯誤處理
+  function handleError(error) {
+    showLoading(false);
+    alert("讀取資料失敗：" + error.message);
+  }
+</script>
+
 </body>
 </html>
